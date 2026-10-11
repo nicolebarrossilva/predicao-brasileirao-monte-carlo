@@ -2,7 +2,7 @@
 
 Projeto acadêmico desenvolvido na disciplina ME524 — Computação Aplicada à Estatística, da Universidade Estadual de Campinas (UNICAMP), em 2026. O trabalho utiliza simulações de Monte Carlo para estudar possíveis classificações finais do Campeonato Brasileiro de Futebol.
 
-# Objetivos
+## Objetivos
 
 - Estimar as probabilidades de título e rebaixamento das equipes;
 
