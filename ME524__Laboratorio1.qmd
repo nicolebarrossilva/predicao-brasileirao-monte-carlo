@@ -1,0 +1,803 @@
+---
+title: "ME524 - Laboratório 01"
+format: html
+editor: visual
+---
+
+# Pacotes
+
+```{r}
+#install.packages("tidyverse")
+
+library(tidyverse)
+```
+
+# Leitura dos dados
+
+```{r}
+url_dados = "https://raw.githubusercontent.com/GustavoCST/Lab-01-ME524-Computa-o-aplicada-a-estat-stica-/refs/heads/main/brasileirao_2026.csv"
+
+dados_brasileirao <- read.csv(url_dados, stringsAsFactors = FALSE)
+head(dados_brasileirao)
+```
+
+# Preparação dos dados
+
+```{r}
+# Jogos que já foram realizados
+jogos_realizados <- dados_brasileirao %>% 
+  filter(!is.na(gols_mandante) & !is.na(gols_visitante))
+
+# Jogos que ainda serão realizados
+jogos_pendentes <- dados_brasileirao %>% 
+  filter(is.na(gols_mandante) | is.na(gols_visitante))
+
+# Lista das equipes do campeonato
+times <- unique(c(dados_brasileirao$time_mandante, dados_brasileirao$time_visitante))
+```
+
+# Estimação de theta e phi
+
+```{r}
+tabela_parametros <- data.frame(
+  time = times,
+  theta = numeric(length(times)),
+  phi = numeric(length(times))
+)
+
+for (i in seq_along(times)) {
+  
+  time_atual <- times[i]
+  
+  # Jogos do time como mandante
+  jogos_casa <- jogos_realizados[
+    jogos_realizados$time_mandante == time_atual,
+  ]
+  
+  # Jogos do time como visitante
+  jogos_fora <- jogos_realizados[
+    jogos_realizados$time_visitante == time_atual,
+  ]
+  
+  # Gols marcados e sofridos
+  gols_marcados <- sum(jogos_casa$gols_mandante) +
+    sum(jogos_fora$gols_visitante)
+  
+  gols_sofridos <- sum(jogos_casa$gols_visitante) +
+    sum(jogos_fora$gols_mandante)
+  
+  # Número de jogos realizados pelo time
+  total_jogos <- nrow(jogos_casa) + nrow(jogos_fora)
+  
+  tabela_parametros$theta[i] <- gols_marcados / total_jogos
+  tabela_parametros$phi[i] <- gols_sofridos / total_jogos
+}
+
+tabela_parametros
+```
+
+# Funções do modelo
+
+```{r}
+# Vetores nomeados com os parâmetros de cada time
+theta <- tabela_parametros$theta
+names(theta) <- tabela_parametros$time
+
+phi <- tabela_parametros$phi
+names(phi) <- tabela_parametros$time
+```
+
+```{r}
+# Função para simular os gols de uma partida entre dois times
+simular_partida <- function(mandante, visitante, theta, phi) {
+  
+  # Obter os parâmetros dos dois times
+  theta_m <- theta[mandante]
+  phi_m <- phi[mandante]
+  
+  theta_v <- theta[visitante]
+  phi_v <- phi[visitante]
+  
+  # Calcular os parâmetros da distribuição de Poisson
+  lambda_mandante <- (theta_m + phi_v) / 2
+  lambda_visitante <- (theta_v + phi_m) / 2
+  
+  # Sortear o número de gols de cada time
+  gols_mandante <- rpois(1, lambda = lambda_mandante)
+  gols_visitante <- rpois(1, lambda = lambda_visitante)
+  
+  # Retornar os gols sorteados
+  return(c(
+    gols_mandante = gols_mandante,
+    gols_visitante = gols_visitante
+  ))
+}
+
+```
+
+```{r}
+# Calcula a classificação do campeonato a partir dos resultados das partidas
+calcular_classificacao <- function(jogos) {
+  
+  # Criar uma tabela inicial com todas as equipes e suas estatísticas
+  tabela <- data.frame(
+    time = times,
+    pontos = 0,
+    vitorias = 0,
+    empates = 0,
+    derrotas = 0,
+    gols_pro = 0,
+    gols_contra = 0
+  )
+  
+  # Percorrer todas as partidas realizadas
+  for (i in 1:nrow(jogos)) {
+    
+    mandante <- jogos$time_mandante[i]
+    visitante <- jogos$time_visitante[i]
+    
+    gols_m <- jogos$gols_mandante[i]
+    gols_v <- jogos$gols_visitante[i]
+    
+    # Encontrar a posição de cada time na tabela
+    idx_m <- which(tabela$time == mandante)
+    idx_v <- which(tabela$time == visitante)
+    
+    # Atualizar os gols marcados e sofridos por cada equipe
+    tabela$gols_pro[idx_m] <- tabela$gols_pro[idx_m] + gols_m
+    tabela$gols_contra[idx_m] <- tabela$gols_contra[idx_m] + gols_v
+    
+    tabela$gols_pro[idx_v] <- tabela$gols_pro[idx_v] + gols_v
+    tabela$gols_contra[idx_v] <- tabela$gols_contra[idx_v] + gols_m
+    
+    # Atualizar a pontuação e o número de vitórias, empates e derrotas
+    if (gols_m > gols_v) {
+      
+      # Vitória do mandante: 3 pontos
+      tabela$vitorias[idx_m] <- tabela$vitorias[idx_m] + 1
+      tabela$pontos[idx_m] <- tabela$pontos[idx_m] + 3
+      tabela$derrotas[idx_v] <- tabela$derrotas[idx_v] + 1
+      
+    } else if (gols_m < gols_v) {
+      
+      # Vitória do visitante: 3 pontos
+      tabela$vitorias[idx_v] <- tabela$vitorias[idx_v] + 1
+      tabela$pontos[idx_v] <- tabela$pontos[idx_v] + 3
+      tabela$derrotas[idx_m] <- tabela$derrotas[idx_m] + 1
+      
+    } else {
+      
+      # Empate: 1 ponto para cada equipe
+      tabela$empates[idx_m] <- tabela$empates[idx_m] + 1
+      tabela$pontos[idx_m] <- tabela$pontos[idx_m] + 1
+      
+      tabela$empates[idx_v] <- tabela$empates[idx_v] + 1
+      tabela$pontos[idx_v] <- tabela$pontos[idx_v] + 1
+    }
+  }
+  
+  # Calcular o saldo de gols de cada equipe
+  tabela$saldo_gols <- tabela$gols_pro - tabela$gols_contra
+  
+  # Ordenar a classificação de acordo com os critérios de desempate:
+  # pontos, número de vitórias, saldo de gols e gols marcados
+  tabela <- tabela %>%
+    arrange(
+      desc(pontos),
+      desc(vitorias),
+      desc(saldo_gols),
+      desc(gols_pro)
+    )
+  
+  # Atribuir a colocação de cada equipe
+  tabela$colocacao <- 1:nrow(tabela)
+  
+  return(tabela)
+}
+
+# Testar a função com os jogos que já foram realizados:
+tabela_base_realizados <- calcular_classificacao(jogos_realizados)
+print(tabela_base_realizados)
+```
+
+# Simulação de Monte Carlo
+
+```{r}
+# Número de simulações
+n_simulacoes <- 2000 
+
+# Contadores para as probabilidades das perguntas 1 e 2
+contador_campeao <- rep(0, length(times))
+names(contador_campeao) <- times
+
+contador_rebaixado <- rep(0, length(times))
+names(contador_rebaixado) <- times
+
+# Armazenar o número de pontos do campeão em cada simulação
+pontos_campeoes <- numeric(n_simulacoes)
+
+# Contar as simulações em que houve empate na liderança
+empates_na_lideranca <- 0
+
+# Armazenar os pontos e a colocação de cada time em cada simulação
+resultados_pontos <- data.frame(
+  time = rep(times, n_simulacoes),
+  pontos = numeric(length(times) * n_simulacoes),
+  colocacao = numeric(length(times) * n_simulacoes)
+)
+
+set.seed(123)
+
+tempo_inicio <- Sys.time()
+
+for (sim in 1:n_simulacoes) {
+  
+  # Começar a simulação a partir da classificação real atual
+  tabela_sim <- tabela_base_realizados
+  
+  # Simular todas as partidas que ainda não foram realizadas
+  for (j in 1:nrow(jogos_pendentes)) {
+    
+    mandante <- jogos_pendentes$time_mandante[j]
+    visitante <- jogos_pendentes$time_visitante[j]
+    
+    # Simular o placar da partida
+    placar <- simular_partida(mandante, visitante, theta, phi)
+    gm <- placar["gols_mandante"]
+    gv <- placar["gols_visitante"]
+    
+    # Identificar os times na tabela da simulação
+    idx_m <- which(tabela_sim$time == mandante)
+    idx_v <- which(tabela_sim$time == visitante)
+    
+    # Atualizar os gols marcados e sofridos
+    tabela_sim$gols_pro[idx_m] <-
+      tabela_sim$gols_pro[idx_m] + gm
+    
+    tabela_sim$gols_contra[idx_m] <-
+      tabela_sim$gols_contra[idx_m] + gv
+    
+    tabela_sim$gols_pro[idx_v] <-
+      tabela_sim$gols_pro[idx_v] + gv
+    
+    tabela_sim$gols_contra[idx_v] <-
+      tabela_sim$gols_contra[idx_v] + gm
+    
+    # Atualizar pontos e resultados de acordo com o placar
+    if (gm > gv) {
+      
+      # Vitória do mandante: 3 pontos
+      tabela_sim$vitorias[idx_m] <-
+        tabela_sim$vitorias[idx_m] + 1
+      
+      tabela_sim$pontos[idx_m] <-
+        tabela_sim$pontos[idx_m] + 3
+      
+      tabela_sim$derrotas[idx_v] <-
+        tabela_sim$derrotas[idx_v] + 1
+      
+    } else if (gm < gv) {
+      
+      # Vitória do visitante: 3 pontos
+      tabela_sim$vitorias[idx_v] <-
+        tabela_sim$vitorias[idx_v] + 1
+      
+      tabela_sim$pontos[idx_v] <-
+        tabela_sim$pontos[idx_v] + 3
+      
+      tabela_sim$derrotas[idx_m] <-
+        tabela_sim$derrotas[idx_m] + 1
+      
+    } else {
+      
+      # Empate: 1 ponto para cada time
+      tabela_sim$empates[idx_m] <-
+        tabela_sim$empates[idx_m] + 1
+      
+      tabela_sim$pontos[idx_m] <-
+        tabela_sim$pontos[idx_m] + 1
+      
+      tabela_sim$empates[idx_v] <-
+        tabela_sim$empates[idx_v] + 1
+      
+      tabela_sim$pontos[idx_v] <-
+        tabela_sim$pontos[idx_v] + 1
+    }
+  }
+  
+  # Calcular o saldo de gols após todas as partidas simuladas
+  tabela_sim$saldo_gols <-
+    tabela_sim$gols_pro - tabela_sim$gols_contra
+  
+  # Ordenar a classificação final pelos critérios de desempate
+  tabela_sim <- tabela_sim %>%
+    arrange(
+      desc(pontos),
+      desc(vitorias),
+      desc(saldo_gols),
+      desc(gols_pro)
+    )
+  
+  # Atribuir a colocação final
+  tabela_sim$colocacao <- seq_len(nrow(tabela_sim))
+  
+  # Armazenar os resultados da simulação na posição correspondente
+  inicio <- (sim - 1) * length(times) + 1
+  fim <- sim * length(times)
+  
+  resultados_pontos$time[inicio:fim] <- tabela_sim$time
+  resultados_pontos$pontos[inicio:fim] <- tabela_sim$pontos
+  resultados_pontos$colocacao[inicio:fim] <- tabela_sim$colocacao
+    
+  # Identificar o campeão
+  campeao <- tabela_sim$time[1]
+  contador_campeao[campeao] <-
+    contador_campeao[campeao] + 1
+  
+  # As posições 17 a 20 correspondem aos quatro rebaixados
+  rebaixados <- tabela_sim$time[17:20]
+  
+  for (r in rebaixados) {
+    contador_rebaixado[r] <-
+      contador_rebaixado[r] + 1
+  }
+  
+  # Verificar se duas ou mais equipes terminaram empatadas em pontos na liderança
+  if (sum(tabela_sim$pontos == max(tabela_sim$pontos)) >= 2) {
+    empates_na_lideranca <-
+      empates_na_lideranca + 1
+  }
+  
+  # Guardar a pontuação do campeão
+  pontos_campeoes[sim] <- tabela_sim$pontos[1]
+}
+
+tempo_fim <- Sys.time()
+
+# Tempo total de execução
+tempo_fim - tempo_inicio
+```
+
+# Resultados das Simulções
+
+```{r}
+# Questões 1 e 2:
+# Probabilidade de cada time ser campeão ou rebaixado
+
+tabela_probabilidades <- data.frame(
+  time = times,
+  prob_campeao = contador_campeao / n_simulacoes,
+  prob_rebaixamento = contador_rebaixado / n_simulacoes
+) %>%
+  arrange(desc(prob_campeao), desc(prob_rebaixamento))
+
+# Exibir as probabilidades
+print(tabela_probabilidades)
+
+# Questão 3:
+# Probabilidade de o campeonato terminar com empate em pontos na liderança
+
+prob_desempate_lideranca <-
+  empates_na_lideranca / n_simulacoes
+
+print(prob_desempate_lideranca)
+
+# Questão 4:
+# Número esperado de pontos do campeão
+
+valor_esperado_pontos_campeao <-
+  mean(pontos_campeoes)
+
+print(valor_esperado_pontos_campeao)
+```
+
+```{r}
+# Questão 5:
+# Pontuação associada a pelo menos 90% de probabilidade de ser campeão
+
+resultado_q5 <- resultados_pontos %>%
+  group_by(pontos) %>%
+  summarise(
+    total = n(),
+    campeoes = sum(colocacao == 1),
+    prob_campeao = campeoes / total
+  )
+
+pontos_90_disponiveis <- resultado_q5 %>%
+  filter(prob_campeao >= 0.90)
+
+if (nrow(pontos_90_disponiveis) > 0) {
+  
+  pontos_90_titulo <- min(pontos_90_disponiveis$pontos)
+  print(pontos_90_titulo)
+  
+} else {
+  
+  pontos_90_titulo <- NA
+  print(
+    "Nenhuma pontuação observada nas simulações atingiu probabilidade de 90% ou mais de ser campeão."
+  )
+}
+
+# Questão 6:
+# Pontuação associada a pelo menos 95% de probabilidade de não ser rebaixado
+
+resultado_q6 <- resultados_pontos %>%
+  group_by(pontos) %>%
+  summarise(
+    total = n(),
+    nao_rebaixados = sum(colocacao <= 16),
+    prob_nao_rebaixado = nao_rebaixados / total
+  )
+
+pontos_95_disponiveis <- resultado_q6 %>%
+  filter(prob_nao_rebaixado >= 0.95)
+
+if (nrow(pontos_95_disponiveis) > 0) {
+  
+  pontos_95_escapar <- min(pontos_95_disponiveis$pontos)
+  print(pontos_95_escapar)
+  
+} else {
+  
+  pontos_95_escapar <- NA
+  print(
+    "Nenhuma pontuação observada nas simulações atingiu probabilidade de 95% ou mais de não ser rebaixado."
+  )
+}
+```
+
+# Método Bootstrap
+
+```{r}
+# Função para realizar o bootstrap dos parâmetros de uma determinada equipe
+bootstrap_time <- function(nome_time, dados, B = 10000) {
+  
+  # Selecionar somente as partidas já realizadas pela equipe
+  jogos <- dados[
+    (dados$time_mandante == nome_time |
+       dados$time_visitante == nome_time) &
+      !is.na(dados$gols_mandante) &
+      !is.na(dados$gols_visitante),
+  ]
+  
+  # Identificar os gols marcados e sofridos pela equipe em cada uma de suas partidas
+  jogos$gols_marcados <- ifelse(
+    jogos$time_mandante == nome_time,
+    jogos$gols_mandante,
+    jogos$gols_visitante
+  )
+  
+  jogos$gols_sofridos <- ifelse(
+    jogos$time_mandante == nome_time,
+    jogos$gols_visitante,
+    jogos$gols_mandante
+  )
+  
+  # Calcular os valores observados de theta e phi
+  theta_obs <- mean(jogos$gols_marcados)
+  phi_obs <- mean(jogos$gols_sofridos)
+  
+  # Vetores para armazenar os valores obtidos nas B amostras bootstrap
+  theta_boot <- numeric(B)
+  phi_boot <- numeric(B)
+  
+  # Realizar as B amostras bootstrap
+  for (b in 1:B) {
+    
+    # Sortear partidas com reposição mantendo cada partida completa
+    indices <- sample(
+      1:nrow(jogos),
+      size = nrow(jogos),
+      replace = TRUE
+    )
+    
+    jogos_boot <- jogos[indices, ]
+    
+    # Calcular theta e phi para a amostra bootstrap
+    theta_boot[b] <- mean(jogos_boot$gols_marcados)
+    phi_boot[b] <- mean(jogos_boot$gols_sofridos)
+  }
+  
+  # Calcular os intervalos de confiança de 95% utilizando os percentis 2,5% e 97,5% das distribuições bootstrap
+  IC_theta <- quantile(
+    theta_boot,
+    probs = c(0.025, 0.975)
+  )
+  
+  IC_phi <- quantile(
+    phi_boot,
+    probs = c(0.025, 0.975)
+  )
+  
+  # Retornar os resultados do bootstrap
+  return(list(
+    time = nome_time,
+    theta_obs = theta_obs,
+    phi_obs = phi_obs,
+    IC_theta = IC_theta,
+    IC_phi = IC_phi
+  ))
+}
+```
+
+```{r}
+# Aplicar o bootstrap para todas as equipes
+set.seed(123)
+
+resultados_bootstrap <- lapply(
+  times,
+  bootstrap_time,
+  dados = jogos_realizados,
+  B = 10000
+)
+
+# Organizar os resultados em uma única tabela
+resultados <- do.call(
+  rbind,
+  lapply(resultados_bootstrap, function(x) {
+    data.frame(
+      time = x$time,
+      theta = x$theta_obs,
+      theta_inf = unname(x$IC_theta[1]),
+      theta_sup = unname(x$IC_theta[2]),
+      phi = x$phi_obs,
+      phi_inf = unname(x$IC_phi[1]),
+      phi_sup = unname(x$IC_phi[2])
+    )
+  })
+)
+
+# Exibir os resultados
+resultados
+```
+
+```{r}
+# Gráfico dos intervalos de confiança de theta
+ggplot(resultados, aes(x = reorder(time, theta), y = theta)) +
+  geom_point() +
+  geom_errorbar(
+    aes(ymin = theta_inf, ymax = theta_sup),
+    width = 0.2
+  ) +
+  coord_flip() +
+  labs(
+    x = "Time",
+    y = "Média de gols marcados",
+    title = "Intervalos de confiança bootstrap para \u03b8"
+  )
+```
+
+```{r}
+# Gráfico dos intervalos de confiança de phi
+ggplot(resultados, aes(x = reorder(time, phi), y = phi)) +
+  geom_point() +
+  geom_errorbar(
+    aes(ymin = phi_inf, ymax = phi_sup),
+    width = 0.2
+  ) +
+  coord_flip() +
+  labs(
+    x = "Time",
+    y = "Média de gols sofridos",
+    title = "Intervalos de confiança bootstrap para \u03c6"
+  ) 
+```
+
+# Atividade Extra: Modelo com Fator Mandante (Vantagem de jogar em casa)
+
+### Justificativa da Alteração Proposta
+
+No modelo de Poisson originalmente proposto, a expectativa de gols ($\lambda$) de cada equipe é calculada por meio de uma média aritmética entre a taxa de gols marcados pelo time e a taxa de gols sofridos pelo adversário. Nesse modelo, não há uma diferenciação explícita entre as partidas disputadas como mandante e como visitante. Como alteração ao modelo original, propõe-se a inclusão de um **fator de mando de campo** (*home advantage*), de modo que a condição de mandante seja incorporada diretamente ao cálculo das taxas de gols esperadas. Para isso, será utilizado um **fator de correção multiplicativo** $\gamma$, calculado a partir da razão entre a média de gols marcados pelos times mandantes e a média de gols marcados pelos times visitantes nas partidas já realizadas:
+
+$$
+\gamma =
+\frac{\text{média de gols dos mandantes}}
+{\text{média de gols dos visitantes}}.
+$$
+
+Esse fator será utilizado para ajustar as expectativas de gols das duas equipes. As novas taxas de Poisson serão dadas por:
+
+$$
+\lambda_{\text{mandante}}
+=
+\frac{\theta_m+\phi_v}{2}\sqrt{\gamma}
+$$
+
+e
+
+$$
+\lambda_{\text{visitante}}
+=
+\frac{\theta_v+\phi_m}{2\sqrt{\gamma}}.
+$$
+
+Dessa forma, o modelo passa a considerar, além das características de ataque e defesa de cada equipe, a condição de mando da partida. O objetivo dessa alteração é comparar os resultados obtidos pelo modelo modificado com aqueles obtidos pelo modelo original, avaliando se a inclusão desse fator produz diferenças nas probabilidades estimadas de título e de rebaixamento.
+
+```{r}
+
+# Estimar o fator casa empiricamente com base nos jogos já realizados
+media_gols_casa <- mean(jogos_realizados$gols_mandante, na.rm = TRUE)
+media_gols_fora <- mean(jogos_realizados$gols_visitante, na.rm = TRUE)
+fator_casa <- media_gols_casa / media_gols_fora
+cat("Fator mandante estimado:", fator_casa, "\n")
+
+# Nova função de simulação considerando o fator casa
+simular_partida_com_fator <- function(mandante, visitante, parametros, fator_casa) {
+  p_m <- parametros %>% filter(time == mandante)
+  theta_m <- p_m$theta
+  phi_m <- p_m$phi
+  
+  p_v <- parametros %>% filter(time == visitante)
+  theta_v <- p_v$theta
+  phi_v <- p_v$phi
+  
+  lambda_mandante <- ((theta_m + phi_v) / 2) * sqrt(fator_casa)
+  lambda_visitante <- ((theta_v + phi_m) / 2) / sqrt(fator_casa)
+  
+  gols_mandante <- rpois(1, lambda = lambda_mandante)
+  gols_visitante <- rpois(1, lambda = lambda_visitante)
+  
+  return(c(gols_mandante = gols_mandante, gols_visitante = gols_visitante))
+}
+```
+
+```{r}
+# Simulação de Monte Carlo com o modelo modificado
+n_simulacoes_extra <- 2000
+
+# Tabela para armazenar a colocação de cada equipe em cada simulação
+resultados_pontos_extra <- data.frame(
+  simulacao = rep(1:n_simulacoes_extra, each = length(times)),
+  time = rep(times, n_simulacoes_extra),
+  colocacao = numeric(length(times) * n_simulacoes_extra),
+  stringsAsFactors = FALSE
+)
+
+set.seed(123)
+
+for (sim in 1:n_simulacoes_extra) {
+  tabela_sim <- tabela_base_realizados
+  
+  if (nrow(jogos_pendentes) > 0) {
+    for (j in 1:nrow(jogos_pendentes)) {
+      mandante <- jogos_pendentes$time_mandante[j]
+      visitante <- jogos_pendentes$time_visitante[j]
+      
+      placar <- simular_partida_com_fator(mandante, visitante, tabela_parametros, fator_casa)
+      gm <- placar["gols_mandante"]
+      gv <- placar["gols_visitante"]
+      
+      idx_m <- which(tabela_sim$time == mandante)
+      idx_v <- which(tabela_sim$time == visitante)
+      
+      tabela_sim$gols_pro[idx_m] <- tabela_sim$gols_pro[idx_m] + gm
+      tabela_sim$gols_contra[idx_m] <- tabela_sim$gols_contra[idx_m] + gv
+      tabela_sim$gols_pro[idx_v] <- tabela_sim$gols_pro[idx_v] + gv
+      tabela_sim$gols_contra[idx_v] <- tabela_sim$gols_contra[idx_v] + gm
+      
+      if (gm > gv) {
+        tabela_sim$vitorias[idx_m] <- tabela_sim$vitorias[idx_m] + 1
+        tabela_sim$pontos[idx_m] <- tabela_sim$pontos[idx_m] + 3
+        tabela_sim$derrotas[idx_v] <- tabela_sim$derrotas[idx_v] + 1
+      } else if (gm < gv) {
+        tabela_sim$vitorias[idx_v] <- tabela_sim$vitorias[idx_v] + 1
+        tabela_sim$pontos[idx_v] <- tabela_sim$pontos[idx_v] + 3
+        tabela_sim$derrotas[idx_m] <- tabela_sim$derrotas[idx_m] + 1
+      } else {
+        tabela_sim$empates[idx_m] <- tabela_sim$empates[idx_m] + 1
+        tabela_sim$pontos[idx_m] <- tabela_sim$pontos[idx_m] + 1
+        tabela_sim$empates[idx_v] <- tabela_sim$empates[idx_v] + 1
+        tabela_sim$pontos[idx_v] <- tabela_sim$pontos[idx_v] + 1
+      }
+    }
+  }
+  
+  tabela_sim$saldo_gols <- tabela_sim$gols_pro - tabela_sim$gols_contra
+  tabela_sim <- tabela_sim %>%
+    arrange(desc(pontos), desc(vitorias), desc(saldo_gols), desc(gols_pro))
+  
+  # Gera as colocações finais (1 ao 20)
+  tabela_sim$colocacao <- 1:nrow(tabela_sim)
+  
+  # Armazenar as colocações na tabela de resultados
+  inicio <- (sim - 1) * length(times) + 1
+  fim <- sim * length(times)
+  
+  idx_match <- match(resultados_pontos_extra$time[inicio:fim], tabela_sim$time)
+  resultados_pontos_extra$colocacao[inicio:fim] <- tabela_sim$colocacao[idx_match]
+}
+
+# Agrupar os resultados
+resumo_extra <- resultados_pontos_extra %>%
+  group_by(time) %>%
+  summarise(
+    prob_campeao_fator_casa = mean(colocacao == 1),
+    prob_rebaixamento_fator_casa = mean(colocacao >= 17)
+  )
+
+# Junta com a tabela original para visualizar
+tabela_comparativa <- tabela_probabilidades %>%
+  select(time, prob_campeao_original = prob_campeao, prob_rebaixamento_original = prob_rebaixamento) %>%
+  left_join(resumo_extra, by = "time") %>%
+  arrange(desc(prob_campeao_fator_casa), desc(prob_rebaixamento_fator_casa))
+
+print(tabela_comparativa)
+```
+
+# Gráficos e resumos interessantes de resultados e métricas
+
+```{r}
+# Gráfico Comparativo da Atividade Extra (Original vs. Fator Casa)
+
+# Preparando os dados da tabela comparativa para o formato longo
+dados_grafico_comparativo <- tabela_comparativa %>%
+  select(time, prob_campeao_original, prob_campeao_fator_casa) %>%
+  filter(prob_campeao_original > 0 | prob_campeao_fator_casa > 0) %>% # Apenas times com chance de título
+  pivot_longer(cols = c(prob_campeao_original, prob_campeao_fator_casa),
+               names_to = "Modelo",
+               values_to = "Probabilidade") %>%
+  mutate(Modelo = ifelse(Modelo == "prob_campeao_original", "Original (Poisson)", "Com Fator Casa"))
+
+# Gráfico de barras comparando as chances de título
+ggplot(dados_grafico_comparativo, aes(x = reorder(time, Probabilidade), y = Probabilidade, fill = Modelo)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Equipe",
+    y = "Probabilidade de Título",
+    title = "Comparação de Probabilidades de Título",
+    subtitle = "Modelo Original de Poisson vs. Modelo com Fator Mandante",
+    fill = "Modelo Estatístico"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Histograma da Distribuição de Pontos do Campeão 
+
+# Criando um data frame com os pontos dos campeões simulados
+df_pontos_campeao <- data.frame(Pontos = pontos_campeoes)
+
+ggplot(df_pontos_campeao, aes(x = Pontos)) +
+  geom_histogram(
+    binwidth = 1,
+    fill = "steelblue",
+    color = "white",
+    alpha = 0.8
+  ) +
+  geom_vline(
+    aes(xintercept = mean(Pontos)),
+    linetype = "dashed",
+    size = 1
+  ) +
+  labs(
+    title = "Distribuição dos Pontos do Campeão (Simulação de Monte Carlo)",
+    subtitle = "Frequência da pontuação final obtida pelo 1º colocado nas simulações",
+    x = "Número de Pontos Finais",
+    y = "Frequência (Simulações)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Boxplot da variabilidade da pontuação final das equipes do Top 8
+
+# Selecionar as 8 equipes mais bem colocadas na classificação atual
+times_topo <- tabela_base_realizados$time[1:8]
+
+resultados_pontos %>%
+  filter(time %in% times_topo) %>%
+  ggplot(aes(x = reorder(time, pontos, FUN = median), y = pontos, fill = time)) +
+  geom_boxplot(alpha = 0.7, outlier.size = 1) +
+  coord_flip() +
+  labs(
+    title = "Variabilidade da Pontuação Final (Top 8)",
+    subtitle = "Distribuição dos pontos simulados via Monte Carlo",
+    x = "Equipe",
+    y = "Pontos Finais Previstos"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
