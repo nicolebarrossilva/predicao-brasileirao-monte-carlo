@@ -32,9 +32,9 @@ Métodos estatísticos: simulação de Monte Carlo e bootstrap
 
 - [`brasileirao_2026.csv`](brasileirao_2026.csv): base de dados com informações de todos os jogos Campeonato Brasileiro de 2026, para os jogos que ainda não haviam sido realizados, o número de gols nas partidas está vazio.
 
-- [`ME524_Laboratorio 1.pdf`](ME524_Laboratorio%201.pdf): relatório do projeto, com a análise dos dados, a metodologia, os resultados e as conclusões.
+- [`ME524_Laboratorio 1.pdf`](ME524_Laboratorio1.pdf): relatório do projeto, com a análise dos dados, a metodologia, os resultados e as conclusões.
 
-- [`ME524_Laboratorio 1.qmd`](ME524_Laboratorio%201.qmd): código-fonte do projeto, incluindo a estimação dos parâmetros, as simulações de Monte Carlo, o bootstrap e a comparação entre os modelos.
+- [`ME524_Laboratorio 1.qmd`](ME524_Laboratorio1.qmd): código-fonte do projeto, incluindo a estimação dos parâmetros, as simulações de Monte Carlo, o bootstrap e a comparação entre os modelos.
 
 ## Autores
 
